@@ -11,7 +11,7 @@ from utils import get_db_url  # should return your Postgres connection string
 load_dotenv()
 
 # Secrets
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 HASHED_PASSWORD = st.secrets["HASHED_PASSWORD"].encode("utf-8")
 
 # Database schema for AI context
@@ -106,7 +106,7 @@ def run_query(sql):
 # ----------------------
 @st.cache_resource
 def get_openai_client():
-    genai.configure(api_key=OPENAI_API_KEY)
+    genai.configure(api_key=GOOGLE_API_KEY)
     return genai.GenerativeModel("models/gemini-2.5-flash")
 
 def extract_sql_from_response(response_text):

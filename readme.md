@@ -6,7 +6,8 @@
 2. [Buy tokens](https://platform.openai.com/settings/organization/billing/overview)
 3. [Generate a API key](https://platform.openai.com/settings/organization/api-keys)
 ## deployment link
-4. [streamlitapp](https://querypatient-fb5ubbkby2xh5f5t65gprfk.streamlit.app)
+4. [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-app-url.streamlit.app)
+
    
 
 ## Steps to run
