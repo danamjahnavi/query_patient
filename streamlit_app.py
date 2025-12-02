@@ -6,15 +6,13 @@ import psycopg2
 from dotenv import load_dotenv
 import google.generativeai as genai
 import bcrypt
-from utils import get_db_url  # Returns DB connection URL
+from utils import get_db_url
 
-# Load .env only if running locally
+# Load .env when local
 if os.path.exists(".env"):
     load_dotenv()
 
-# ----------------------------------------------------------------
-# REQUIRED SECRETS FROM STREAMLIT CLOUD
-# ----------------------------------------------------------------
+# Secrets (Cloud Only)
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 HASHED_PASSWORD = st.secrets["HASHED_PASSWORD"].encode("utf-8")
 
@@ -25,9 +23,7 @@ POSTGRES_DATABASE = st.secrets["POSTGRES_DATABASE"]
 
 genai.configure(api_key=GOOGLE_API_KEY)
 
-# ----------------------------------------------------------------
-# Database schema sent to Gemini
-# ----------------------------------------------------------------
+# Database Schema for AI prompt
 DATABASE_SCHEMA = """
 Database Schema:
 
@@ -40,49 +36,33 @@ CORE TABLES:
 - Customer(CustomerID, FirstName, LastName, Address, City, CountryID)
 - Product(ProductID, ProductName, ProductUnitPrice, ProductCategoryID)
 - OrderDetail(OrderID, CustomerID, ProductID, OrderDate, QuantityOrdered)
-
-IMPORTANT NOTES:
-- Use JOINs to get descriptive values (e.g., Customer → Country → Region)
-- OrderDate is DATE type
-- QuantityOrdered is INTEGER
-- Use aggregates like SUM, AVG, COUNT appropriately
-- Add LIMIT 100 to large result queries
 """
 
-# ----------------------------------------------------------------
-# LOGIN SCREEN
-# ----------------------------------------------------------------
+# ========================= LOGIN =========================
 def login_screen():
     st.title("🔐 Secure Login")
-    st.write("Enter your password to access the AI SQL Query Assistant.")
-    
-    password = st.text_input("Password", type="password")
+    password = st.text_input("Enter password", type="password")
 
     if st.button("Login"):
-        if bcrypt.checkpw(password.encode("utf-8"), HASHED_PASSWORD):
+        if bcrypt.checkpw(password.encode(), HASHED_PASSWORD):
             st.session_state.logged_in = True
-            st.success("Login successful! Redirecting...")
             st.rerun()
         else:
-            st.error("Incorrect password")
-
-    st.info("Passwords are securely protected using bcrypt hashing.")
+            st.error("❌ Incorrect password")
 
 def require_login():
     if not st.session_state.get("logged_in"):
         login_screen()
         st.stop()
 
-# ----------------------------------------------------------------
-# GET DATABASE CONNECTION
-# ----------------------------------------------------------------
+# ===================== DB CONNECTION =====================
 @st.cache_resource
 def get_db_connection():
     try:
         conn = psycopg2.connect(get_db_url())
         return conn
     except Exception as e:
-        st.error(f"Database connection failed: {e}")
+        st.error(f"Database error: {e}")
         return None
 
 def run_query(sql):
@@ -90,68 +70,80 @@ def run_query(sql):
     try:
         return pd.read_sql_query(sql, conn)
     except Exception as e:
-        st.error(f"❌ SQL execution error: {e}")
+        st.error(f"Error executing query: {e}")
         return None
 
-# ----------------------------------------------------------------
-# GEMINI SQL GENERATION
-# ----------------------------------------------------------------
+# ===================== Gemini Processing ==================
 @st.cache_resource
 def get_genai_client():
     return genai.GenerativeModel("models/gemini-2.0-flash")
 
-def extract_sql_from_response(text):
-    return re.sub(r"```sql|```", "", text, flags=re.IGNORECASE).strip()
+def extract_sql(response):
+    return re.sub(r"```sql|```", "", response, flags=re.IGNORECASE).strip()
 
-def generate_sql_with_ai(question):
-    model = get_genai_client()
+def generate_sql(question):
     prompt = f"""
-Generate a valid PostgreSQL query based on this question and schema.
-
+Generate SQL only. Schema:
 {DATABASE_SCHEMA}
-
 Question: {question}
-
 Rules:
-- Only output SQL (no explanation)
-- Use proper JOIN logic
-- Include LIMIT 100 for large sets
-- Include column aliases using AS
+- Use JOINs
+- No explanation
+- LIMIT 100 if many rows
 """
 
-    try:
-        response = model.generate_text(prompt)
-        return extract_sql_from_response(response.text)
-    except Exception as e:
-        st.error(f"Error calling Gemini API: {e}")
-        return None
+    model = get_genai_client()
+    response = model.generate_text(prompt)
+    return extract_sql(response.text)
 
-# ----------------------------------------------------------------
-# MAIN APP
-# ----------------------------------------------------------------
+# ======================= Main UI ==========================
 def main():
     require_login()
 
-    st.title("🤖 AI-Powered SQL Query Assistant")
-    st.markdown("Ask a natural language question — I will convert it into a SQL query!")
+    st.sidebar.title("💡 Example Questions")
+    st.sidebar.markdown("""
+- How many customers by city?
+- Total sales by product category?
+- Top 10 products by quantity?
+- Average order quantity?
 
-    user_question = st.text_input("Your question:")
-
-    if st.button("Generate SQL") and user_question.strip():
-        with st.spinner("AI is generating SQL..."):
-            sql = generate_sql_with_ai(user_question)
-            if sql:
-                st.text_area("Generated SQL", sql, height=200)
-                if st.button("Run Query"):
-                    df = run_query(sql)
-                    if df is not None:
-                        st.success(f"Returned {len(df)} rows")
-                        st.dataframe(df, use_container_width=True)
-
-    if st.button("Logout"):
+---
+    """)
+    
+    if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
         st.rerun()
 
-# Run the app
+    st.title("🤖 AI-Powered SQL Query Assistant")
+    st.markdown("Ask your data anything. I will write SQL for you!")
+
+    if "history" not in st.session_state:
+        st.session_state.history = []
+
+    question = st.text_area("Your Question:")
+
+    if st.button("Generate SQL"):
+        if question.strip():
+            with st.spinner("Thinking..."):
+                sql = generate_sql(question)
+                st.session_state.generated_sql = sql
+                st.session_state.history.append({"q": question, "sql": sql})
+
+    if "generated_sql" in st.session_state:
+        st.subheader("Generated SQL")
+        updated_sql = st.text_area("Edit Query:", st.session_state.generated_sql)
+
+        if st.button("Run Query"):
+            df = run_query(updated_sql)
+            if df is not None:
+                st.success(f"Rows returned: {len(df)}")
+                st.dataframe(df, use_container_width=True)
+
+    if st.session_state.history:
+        st.subheader("📜 Query History")
+        for item in reversed(st.session_state.history[-5:]):
+            with st.expander(item["q"]):
+                st.code(item["sql"], language="sql")
+
 if __name__ == "__main__":
     main()
