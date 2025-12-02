@@ -1,23 +1,25 @@
 import os
-from dotenv import find_dotenv, load_dotenv
-
-# Load .env file anywhere in project
-dotenv_path = find_dotenv()
-if dotenv_path:
-    load_dotenv(dotenv_path)
-else:
-    raise Exception(".env file not found!")
+from dotenv import load_dotenv
+import streamlit as st
 
 def get_db_url():
-    POSTGRES_USERNAME = os.getenv("POSTGRES_USERNAME")
-    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-    POSTGRES_SERVER = os.getenv("POSTGRES_SERVER")
-    POSTGRES_DATABASE = os.getenv("POSTGRES_DATABASE")
-    POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+    if "DB_USER" in st.secrets:
+        user = st.secrets["DB_USER"]
+        password = st.secrets["DB_PASSWORD"]
+        host = st.secrets["DB_HOST"]
+        database = st.secrets["DB_NAME"]
+        port = st.secrets.get("DB_PORT", "5432")
+        return f"postgresql://{user}:{password}@{host}:{port}/{database}"
 
-    print("DEBUG:", POSTGRES_USERNAME, POSTGRES_SERVER, POSTGRES_DATABASE)
+    
+    load_dotenv()
+    user = os.getenv("DB_USER")
+    password = os.getenv("DB_PASSWORD")
+    host = os.getenv("DB_HOST")
+    database = os.getenv("DB_NAME")
+    port = os.getenv("DB_PORT", "5432")
 
-    if None in [POSTGRES_USERNAME, POSTGRES_PASSWORD, POSTGRES_SERVER, POSTGRES_DATABASE]:
-        raise Exception("Missing environment variables!")
+    if not all([user, password, host, database]):
+        raise Exception("Missing DB credentials in st.secrets or .env")
 
-    return f"postgresql://{POSTGRES_USERNAME}:{POSTGRES_PASSWORD}@{POSTGRES_SERVER}:{POSTGRES_PORT}/{POSTGRES_DATABASE}"
+    return f"postgresql://{user}:{password}@{host}:{port}/{database}"
